@@ -13,9 +13,15 @@ Three modes, each called by mis_runner.py:
 
     detect_slippage(token, db_entries, min_days=1)
         → queries all non-done tasks, filters by slippage_days >= min_days
-        → returns flat sorted list for the slippage digest
+        → returns (slipped_tasks, stalled_tasks)
+
+    detect_overdue(token, db_entries, min_days=1)
+        → queries all non-done tasks, filters by days_overdue >= min_days
+        → returns (overdue_tasks, stalled_tasks)
 """
 import logging
+
+_STALLED_STATUSES = frozenset({"on hold", "blocked"})
 
 log = logging.getLogger(__name__)
 
@@ -80,22 +86,73 @@ def detect_due_soon(cache, days: int = 2) -> list:
     return rows
 
 
-def detect_slippage(token: str, db_entries: list, min_days: int = 1) -> list:
+def detect_overdue(token: str, db_entries: list, min_days: int = 1) -> tuple:
     """
-    Fetch all non-done tasks across all DBs and return those whose
-    slippage_days >= min_days, sorted by slippage_days descending.
-
-    Each returned task dict has an extra "owner_name" key (comma-joined
-    assignee names) ready for use in the slippage digest table.
+    Fetch all non-done tasks across DBs where overdue=true and return those
+    whose days_overdue >= min_days, sorted by days_overdue descending.
+    Also collects all On Hold / Blocked tasks from the same DBs.
 
     Returns:
-        [task_dict, ...]   sorted by slippage_days desc
+        (overdue_tasks, stalled_tasks)   both sorted by days_overdue desc / name
     """
     from notion_client import get_all_tasks_for_mis
 
-    slipped: list = []
+    overdue:  list = []
+    stalled:  list = []
+    seen_ids: set  = set()
 
     for entry in db_entries:
+        if not entry.get("overdue", True):
+            log.info("[%s] overdue=false — skipping.", entry["env_var"])
+            continue
+        log.info("[%s] Querying Notion for overdue tasks...", entry["env_var"])
+        try:
+            tasks = get_all_tasks_for_mis(
+                token, entry["db_id"], entry["fields"], entry["db_name"]
+            )
+        except Exception as exc:
+            log.error("[%s] Overdue query failed: %s", entry["env_var"], exc)
+            continue
+
+        for t in tasks:
+            owners = t.get("assignees") or []
+            t["owner_name"] = (
+                ", ".join(o["name"] for o in owners if o.get("name")) or "—"
+            )
+            days = t.get("days_overdue", 0)
+            if (t.get("overdue") or days > 0) and days >= min_days:
+                overdue.append(t)
+            if (t.get("status") or "").lower() in _STALLED_STATUSES:
+                if t["id"] not in seen_ids:
+                    seen_ids.add(t["id"])
+                    stalled.append(t)
+
+    overdue.sort(key=lambda t: t.get("days_overdue", 0), reverse=True)
+    stalled.sort(key=lambda t: t.get("name", ""))
+    log.info("[Overdue] %d overdue, %d stalled task(s) found (min_days=%d).",
+             len(overdue), len(stalled), min_days)
+    return overdue, stalled
+
+
+def detect_slippage(token: str, db_entries: list, min_days: int = 1) -> tuple:
+    """
+    Fetch all non-done tasks across all DBs and return those whose
+    slippage_days >= min_days, sorted by slippage_days descending.
+    Also collects all On Hold / Blocked tasks from the same DBs.
+
+    Returns:
+        (slipped_tasks, stalled_tasks)
+    """
+    from notion_client import get_all_tasks_for_mis
+
+    slipped:  list = []
+    stalled:  list = []
+    seen_ids: set  = set()
+
+    for entry in db_entries:
+        if not entry.get("slippage", True):
+            log.info("[%s] slippage=false — skipping.", entry["env_var"])
+            continue
         log.info("[%s] Querying Notion for slippage...", entry["env_var"])
         try:
             tasks = get_all_tasks_for_mis(
@@ -106,13 +163,19 @@ def detect_slippage(token: str, db_entries: list, min_days: int = 1) -> list:
             continue
 
         for t in tasks:
+            owners = t.get("assignees") or []
+            t["owner_name"] = (
+                ", ".join(o["name"] for o in owners if o.get("name")) or "—"
+            )
             if (t.get("slippage_days") or 0) >= min_days:
-                owners = t.get("assignees") or []
-                t["owner_name"] = (
-                    ", ".join(o["name"] for o in owners if o.get("name")) or "—"
-                )
                 slipped.append(t)
+            if (t.get("status") or "").lower() in _STALLED_STATUSES:
+                if t["id"] not in seen_ids:
+                    seen_ids.add(t["id"])
+                    stalled.append(t)
 
     slipped.sort(key=lambda t: t.get("slippage_days", 0), reverse=True)
-    log.info("[Slippage] %d slipped task(s) found (min_days=%d).", len(slipped), min_days)
-    return slipped
+    stalled.sort(key=lambda t: t.get("name", ""))
+    log.info("[Slippage] %d slipped, %d stalled task(s) found (min_days=%d).",
+             len(slipped), len(stalled), min_days)
+    return slipped, stalled

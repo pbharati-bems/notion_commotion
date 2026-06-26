@@ -22,13 +22,19 @@ Events emitted by diff():
 """
 import json
 import logging
+import os
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_PATH = Path(__file__).parent / "mis_state.db"
+
+def _default_state_path() -> Path:
+    override = os.environ.get("STATE_CACHE_DB")
+    if override:
+        return Path(override)
+    return Path(__file__).parent / "mis_state.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS task_state (
@@ -46,7 +52,9 @@ CREATE TABLE IF NOT EXISTS task_state (
 
 class StateCache:
 
-    def __init__(self, db_path: Path = _DEFAULT_PATH):
+    def __init__(self, db_path: Path | None = None):
+        if db_path is None:
+            db_path = _default_state_path()
         self._path = db_path
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row

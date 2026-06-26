@@ -1,0 +1,23 @@
+[
+  {
+    "env_var": "NOTION_TEST_DATABASE_ID",
+    "digest": true,
+    "recipient_emails": [],
+    "fields": {
+      "title":             "Task",
+      "due_date":          "Planned Finish",
+      "status":            "Status",
+      "done_value":        "Complete",
+      "in_progress_value": "In Progress",
+      "owner":             "Assignee",
+      "reviewer":          null,
+      "overdue":           null,
+      "history":           "Due Date History",
+      "description":       null,
+      "priority":          "Category",
+      "team":              null,
+      "project":           null,
+      "parent_task":       null
+    }
+  }
+]

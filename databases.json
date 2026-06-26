@@ -2,6 +2,8 @@
   {
     "env_var": "NOTION_DATABASE_ID",
     "digest": true,
+    "slippage": false,
+    "overdue": false,
     "recipient_emails": [],
     "fields": {
       "title":              "Task name",
@@ -17,12 +19,16 @@
       "priority":           "Priority",
       "team":               "Team",
       "project":            "Project",
-      "parent_task":        "Parent task"
+      "parent_task":        "Parent task",
+      "blocking":           "Blocking",
+      "blocked_by":         "Blocked by"
     }
   },
   {
     "env_var": "NOTION_DATABASE_2_ID",
     "digest": false,
+    "slippage": true,
+    "overdue": true,
     "recipient_emails": [],
     "fields": {
       "title":              "Task name",
@@ -38,7 +44,9 @@
       "priority":           "Priority",
       "team":               "Team",
       "project":            "Project",
-      "parent_task":        "Parent task"
+      "parent_task":        "Parent task",
+      "blocking":           "Blocking",
+      "blocked_by":         "Blocked by"
     }
   }
 ]

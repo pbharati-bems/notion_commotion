@@ -6,7 +6,7 @@ Usage:
   python mis_runner.py --events       Detect task changes  (Req 1 + Req 4)
   python mis_runner.py --daily        Due-in-2-days reminders  (Req 5)
   python mis_runner.py --slippage     Slippage digest  (Req 3)
-  python mis_runner.py --all          Run all three modes in sequence
+  python mis_runner.py --all          Run all four modes in sequence
   python mis_runner.py --dry-run      Add to any flag: log what WOULD be sent, no emails
 
 Examples:
@@ -23,6 +23,9 @@ Cron schedule (IST = UTC+5:30):
 
   # Daily 9:00 AM IST — slippage digest
   30 3 * * 1-6  /path/.venv/bin/python /path/mis_runner.py --slippage
+
+  # Daily 9:15 AM IST — overdue digest
+  45 3 * * 1-6  /path/.venv/bin/python /path/mis_runner.py --overdue
 """
 import argparse
 import json
@@ -43,9 +46,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-_APP_CONFIG = Path(__file__).parent / "config.json"
-_DB_CONFIG  = Path(__file__).parent / "databases.json"
-
 _REQUIRED_ENV = [
     "NOTION_TOKEN",
     "AZURE_TENANT_ID",
@@ -58,28 +58,28 @@ _REQUIRED_ENV = [
 # Config loaders
 # ---------------------------------------------------------------------------
 
-def _load_app_config() -> dict:
+def _load_app_config(path: Path) -> dict:
     try:
-        cfg = json.loads(_APP_CONFIG.read_text())
+        cfg = json.loads(path.read_text())
     except Exception as exc:
-        log.error("Cannot read config.json: %s", exc)
+        log.error("Cannot read %s: %s", path.name, exc)
         sys.exit(1)
     if not cfg.get("sender_email"):
-        log.error("config.json missing 'sender_email'")
+        log.error("%s missing 'sender_email'", path.name)
         sys.exit(1)
     return cfg
 
 
-def _resolve_db_entries(notion_token: str) -> list:
+def _resolve_db_entries(notion_token: str, db_config_path: Path) -> list:
     """
-    Load databases.json, resolve each env_var to a DB ID, and fetch
+    Load databases config, resolve each env_var to a DB ID, and fetch
     the human-readable DB name from Notion.
     Returns list of dicts: {env_var, db_id, db_name, fields}
     """
     try:
-        raw_dbs = json.loads(_DB_CONFIG.read_text())
+        raw_dbs = json.loads(db_config_path.read_text())
     except Exception as exc:
-        log.error("Cannot read databases.json: %s", exc)
+        log.error("Cannot read %s: %s", db_config_path.name, exc)
         sys.exit(1)
 
     headers = {
@@ -110,10 +110,13 @@ def _resolve_db_entries(notion_token: str) -> list:
             pass
 
         entries.append({
-            "env_var": env_var,
-            "db_id":   db_id,
-            "db_name": db_name,
-            "fields":  entry.get("fields", {}),
+            "env_var":  env_var,
+            "db_id":    db_id,
+            "db_name":  db_name,
+            "fields":   entry.get("fields", {}),
+            "digest":   entry.get("digest",   True),
+            "slippage": entry.get("slippage", True),
+            "overdue":  entry.get("overdue",  True),
         })
 
     if not entries:
@@ -138,20 +141,35 @@ def main() -> int:
                         help="Send due-in-2-days reminders to task owners/PMs")
     parser.add_argument("--slippage", action="store_true",
                         help="Send slippage digest to executives, leaders, PMs")
+    parser.add_argument("--overdue",  action="store_true",
+                        help="Send overdue digest to executives, leaders, PMs")
     parser.add_argument("--all",      action="store_true",
-                        help="Run --events + --daily + --slippage in sequence")
+                        help="Run --events + --daily + --slippage + --overdue in sequence")
     parser.add_argument("--dry-run",  action="store_true",
                         help="Log what would be sent — no emails actually sent")
     parser.add_argument("--min-slip", type=int, default=None,
                         help="Min slippage days for the digest (overrides config.json)")
+    parser.add_argument("--test",     action="store_true",
+                        help="Use test config (config.test.json, databases.test.json, mis_state.test.db)")
     args = parser.parse_args()
 
-    if not any([args.events, args.daily, args.slippage, args.all]):
+    if not any([args.events, args.daily, args.slippage, args.overdue, args.all]):
         parser.print_help()
         return 1
 
     if args.all:
-        args.events = args.daily = args.slippage = True
+        args.events = args.daily = args.slippage = args.overdue = True
+
+    # ── Test-mode config selection ────────────────────────────────────────
+    _base = Path(__file__).parent
+    if args.test:
+        app_config_path = _base / "config.test.json"
+        db_config_path  = _base / "databases.test.json"
+        os.environ["STATE_CACHE_DB"] = str(_base / "mis_state.test.db")
+        log.info("TEST MODE — config.test.json | databases.test.json | mis_state.test.db")
+    else:
+        app_config_path = _base / "config.json"
+        db_config_path  = _base / "databases.json"
 
     # ── Environment checks ────────────────────────────────────────────────
     missing = [k for k in _REQUIRED_ENV if not os.getenv(k)]
@@ -160,8 +178,8 @@ def main() -> int:
         return 1
 
     notion_token = os.environ["NOTION_TOKEN"]
-    cfg          = _load_app_config()
-    db_entries   = _resolve_db_entries(notion_token)
+    cfg          = _load_app_config(app_config_path)
+    db_entries   = _resolve_db_entries(notion_token, db_config_path)
 
     min_slip = (
         args.min_slip
@@ -172,7 +190,7 @@ def main() -> int:
 
     log.info(
         "MIS run started — modes: %s | dry_run=%s | %d DB(s)",
-        "+".join(m for m in ("events","daily","slippage") if getattr(args, m, False)),
+        "+".join(m for m in ("events","daily","slippage","overdue") if getattr(args, m, False)),
         args.dry_run,
         len(db_entries),
     )
@@ -193,8 +211,8 @@ def main() -> int:
             return 1
 
     from state_cache    import StateCache
-    from event_detector import detect_changes, detect_due_soon, detect_slippage
-    from event_dispatcher import dispatch_events, dispatch_due_soon, dispatch_slippage
+    from event_detector import detect_changes, detect_due_soon, detect_slippage, detect_overdue
+    from event_dispatcher import dispatch_events, dispatch_due_soon, dispatch_slippage, dispatch_overdue
 
     cache      = StateCache()
     all_errors: list = []
@@ -264,27 +282,50 @@ def main() -> int:
             if args.dry_run:
                 log.info("DRY-RUN — no emails sent.")
             else:
-                errs = dispatch_due_soon(due_rows, full_tasks, cfg, graph_token, cache)
+                errs = dispatch_due_soon(due_rows, full_tasks, cfg, graph_token, cache,
+                                     dry_run=args.dry_run)
                 all_errors.extend(errs)
 
     # ── --slippage  (Req 3) ───────────────────────────────────────────────
     if args.slippage:
         log.info("─── MODE: --slippage ─────────────────────────────────────")
-        slipped = detect_slippage(notion_token, db_entries, min_days=min_slip)
+        slipped, stalled_slip = detect_slippage(notion_token, db_entries, min_days=min_slip)
 
-        if not slipped:
-            log.info("No slippage found (min_days=%d). Nothing to send.", min_slip)
+        if not slipped and not stalled_slip:
+            log.info("No slippage or stalled tasks found (min_days=%d). Nothing to send.", min_slip)
         else:
             for t in slipped:
                 log.info("  +%3dd  %s", t.get("slippage_days", 0), t["name"])
+            for t in stalled_slip:
+                log.info("  [%-8s]  %s", t.get("status", "?"), t["name"])
 
             if args.dry_run:
                 log.info("DRY-RUN — no emails sent.")
             else:
-                errs = dispatch_slippage(slipped, cfg, graph_token)
+                errs = dispatch_slippage(slipped, stalled_slip, cfg, graph_token)
                 all_errors.extend(errs)
 
-    # ── Wrap-up ───────────────────────────────────────────────────────────
+    # ── --overdue ─────────────────────────────────────────────────────────
+    if args.overdue:
+        log.info("─── MODE: --overdue ──────────────────────────────────────")
+        min_overdue = cfg.get("mis", {}).get("overdue_min_days", 1)
+        overdue_tasks, stalled_ov = detect_overdue(notion_token, db_entries, min_days=min_overdue)
+
+        if not overdue_tasks and not stalled_ov:
+            log.info("No overdue or stalled tasks found (min_days=%d). Nothing to send.", min_overdue)
+        else:
+            for t in overdue_tasks:
+                log.info("  +%3dd overdue  %s", t.get("days_overdue", 0), t["name"])
+            for t in stalled_ov:
+                log.info("  [%-8s]  %s", t.get("status", "?"), t["name"])
+
+            if args.dry_run:
+                log.info("DRY-RUN — no emails sent.")
+            else:
+                errs = dispatch_overdue(overdue_tasks, stalled_ov, cfg, graph_token)
+                all_errors.extend(errs)
+
+        # ── Wrap-up ───────────────────────────────────────────────────────────
     cache.close()
 
     stats = ""

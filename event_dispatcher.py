@@ -9,6 +9,7 @@ Recipient resolution rules (from config.json "roles"):
     StatusStarted   →  assignees  + roles.admin  + roles.pm[db_env_var]
     DueSoon         →  assignees  + roles.admin  + roles.pm[db_env_var]
     Slippage digest →  roles.executive + roles.leader + all roles.pm values
+    Overdue digest  →  roles.executive + roles.leader + all roles.pm values
 
 Subject lines:
     [New Task]        {task_name} — due {date}
@@ -16,6 +17,7 @@ Subject lines:
     [Project Started] {task_name} — {today}
     [Reminder]        {task_name} due {date}
     [Slippage Report] N task(s) with shifted due dates — {today}
+    [Overdue Report]  N task(s) past due date — {today}
 """
 import logging
 from datetime import date
@@ -169,6 +171,7 @@ def dispatch_due_soon(
     cfg: dict,
     token: str,
     cache,
+    dry_run: bool = False,
 ) -> list:
     """
     Send a due-soon reminder for each cache row returned by detect_due_soon().
@@ -177,6 +180,7 @@ def dispatch_due_soon(
         due_rows   — from cache.due_soon_tasks()
         full_tasks — {page_id: task_dict} built from get_all_tasks_for_mis()
         cache      — StateCache instance (to call mark_due_soon_notified)
+        dry_run    — if True, log what would be sent but do NOT mark as notified
 
     Returns list of error strings.
     """
@@ -191,7 +195,8 @@ def dispatch_due_soon(
 
         if not task:
             # Task may have been closed/deleted — silence the reminder
-            cache.mark_due_soon_notified(pid, row["due_date"])
+            if not dry_run:
+                cache.mark_due_soon_notified(pid, row["due_date"])
             log.debug("[DueSoon] page_id %s not in current snapshot (likely Done) — skipped.", pid)
             continue
 
@@ -201,14 +206,16 @@ def dispatch_due_soon(
 
             if not recipients:
                 log.warning("[DueSoon] \"%s\" — no recipients configured, skipping.", name)
-                cache.mark_due_soon_notified(pid, row["due_date"])
+                if not dry_run:
+                    cache.mark_due_soon_notified(pid, row["due_date"])
                 continue
 
             due_str = task.get("due_date") or "soon"
             subject = f"[Reminder] {name} due {due_str}"
             html    = _build_due_soon_html(task, days_until_due=2)
             send_mis_email(token, sender, recipients, subject, html)
-            cache.mark_due_soon_notified(pid, row["due_date"])
+            if not dry_run:
+                cache.mark_due_soon_notified(pid, row["due_date"])
             log.info("[DueSoon] \"%s\" → %d recipient(s)", name, len(recipients))
 
         except Exception as exc:
@@ -223,15 +230,15 @@ def dispatch_due_soon(
 # dispatch_slippage — slippage digest (Req 3)
 # ---------------------------------------------------------------------------
 
-def dispatch_slippage(slipped_tasks: list, cfg: dict, token: str) -> list:
+def dispatch_slippage(slipped_tasks: list, stalled_tasks: list, cfg: dict, token: str) -> list:
     """
     Send a single slippage digest email to executives + leaders + all PMs.
     Returns list of error strings.
     """
     from mailer import _build_slippage_digest_html, send_mis_email
 
-    if not slipped_tasks:
-        log.info("[Slippage] No slipped tasks — nothing to send.")
+    if not slipped_tasks and not stalled_tasks:
+        log.info("[Slippage] No slipped or stalled tasks — nothing to send.")
         return []
 
     recipients = _merge(
@@ -255,15 +262,64 @@ def dispatch_slippage(slipped_tasks: list, cfg: dict, token: str) -> list:
     sender = cfg["sender_email"]
 
     try:
-        html = _build_slippage_digest_html(slipped_tasks)
+        html = _build_slippage_digest_html(slipped_tasks, stalled_tasks)
         send_mis_email(token, sender, recipients, subject, html)
         log.info(
-            "[Slippage] digest sent → %d recipient(s), %d slipped task(s).",
-            len(recipients), len(slipped_tasks),
+            "[Slippage] digest sent → %d recipient(s), %d slipped, %d stalled task(s).",
+            len(recipients), len(slipped_tasks), len(stalled_tasks),
         )
     except Exception as exc:
         msg = f"Slippage digest: {exc}"
         log.error("[dispatch_slippage] %s", msg)
+        return [msg]
+
+    return []
+
+
+# ---------------------------------------------------------------------------
+# dispatch_overdue — overdue digest
+# ---------------------------------------------------------------------------
+
+def dispatch_overdue(overdue_tasks: list, stalled_tasks: list, cfg: dict, token: str) -> list:
+    """
+    Send a single overdue digest email to executives + leaders + all PMs.
+    Returns list of error strings.
+    """
+    from mailer import _build_overdue_digest_html, send_mis_email
+
+    if not overdue_tasks and not stalled_tasks:
+        log.info("[Overdue] No overdue or stalled tasks — nothing to send.")
+        return []
+
+    recipients = _merge(
+        _executive_emails(cfg),
+        _leader_emails(cfg),
+        _all_pm_emails(cfg),
+    )
+
+    if not recipients:
+        log.warning(
+            "[Overdue] No recipients in roles.executive / roles.leader / roles.pm. "
+            "Add emails to config.json and re-run."
+        )
+        return []
+
+    today_str = date.today().strftime("%d %b %Y")
+    subject   = (
+        f"[Overdue Report] {len(overdue_tasks)} task(s) past due date — {today_str}"
+    )
+    sender = cfg["sender_email"]
+
+    try:
+        html = _build_overdue_digest_html(overdue_tasks, stalled_tasks)
+        send_mis_email(token, sender, recipients, subject, html)
+        log.info(
+            "[Overdue] digest sent → %d recipient(s), %d overdue, %d stalled task(s).",
+            len(recipients), len(overdue_tasks), len(stalled_tasks),
+        )
+    except Exception as exc:
+        msg = f"Overdue digest: {exc}"
+        log.error("[dispatch_overdue] %s", msg)
         return [msg]
 
     return []

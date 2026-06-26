@@ -526,10 +526,11 @@ def get_all_tasks_for_mis(
         status_name = props.get(fields["status"], {}).get("status", {}).get("name", "") or ""
 
         slippage_days, original_date = 0, None
+        all_dates: list = []
         if fields.get("history"):
-            slippage_days, original_date, _ = _slippage(
-                _rich_text(props.get(fields["history"], {}))
-            )
+            _hist = _rich_text(props.get(fields["history"], {}))
+            slippage_days, original_date, _ = _slippage(_hist)
+            all_dates = _DATE_RE.findall(_hist)  # newest-first
 
         description = ""
         if fields.get("description"):
@@ -557,48 +558,74 @@ def get_all_tasks_for_mis(
         # Team members = owner(s) + reviewer(s), deduplicated by name
         team_members: list[dict] = list(assignees)
         reviewer_field = fields.get("reviewer")
+        reviewer_names = ""
         if reviewer_field:
             existing_names = {m["name"] for m in team_members}
-            for person in props.get(reviewer_field, {}).get("people", []):
+            _rev_people = props.get(reviewer_field, {}).get("people", [])
+            reviewer_names = ", ".join(p.get("name", "") for p in _rev_people if p.get("name"))
+            for person in _rev_people:
                 email = (person.get("person") or {}).get("email", "")
                 name  = person.get("name", email or "Unknown")
                 if name not in existing_names:
                     team_members.append({"name": name, "email": email})
                     existing_names.add(name)
 
-        proj_rel  = props.get(fields.get("project",      "") or "", {}).get("relation", [])
-        par_rel   = props.get(fields.get("parent_task",  "") or "", {}).get("relation", [])
-        proj_id   = proj_rel[0]["id"] if proj_rel  else None
-        parent_id = par_rel[0]["id"]  if par_rel   else None
+        # Overdue + days overdue
+        overdue_val = False
+        if fields.get("overdue"):
+            overdue_val = props.get(fields["overdue"], {}).get("formula", {}).get("boolean", False)
+        days_overdue = 0
+        if overdue_val and due_date:
+            try:
+                days_overdue = max(0, (date.today() - date.fromisoformat(due_date)).days)
+            except ValueError:
+                pass
+
+        proj_rel     = props.get(fields.get("project",     "") or "", {}).get("relation", [])
+        par_rel      = props.get(fields.get("parent_task", "") or "", {}).get("relation", [])
+        blocking_rel = props.get(fields.get("blocking",    "") or "", {}).get("relation", [])
+        proj_id      = proj_rel[0]["id"]     if proj_rel     else None
+        parent_id    = par_rel[0]["id"]      if par_rel      else None
+        blocking_ids = [r["id"] for r in blocking_rel]
         if proj_id:   relation_ids.add(proj_id)
         if parent_id: relation_ids.add(parent_id)
+        for bid in blocking_ids:
+            relation_ids.add(bid)
 
         raw_tasks.append({
-            "id":            page["id"],
-            "name":          title,
-            "url":           page.get("url", ""),
-            "due_date":      due_date,
-            "status":        status_name,
-            "priority":      priority,
-            "teams":         teams,
-            "description":   description,
-            "slippage_days": slippage_days,
-            "original_date": original_date,
-            "db_name":       db_name,
-            "assignees":     assignees,
-            "team_members":  team_members,
-            "_project_id":   proj_id,
-            "_parent_id":    parent_id,
+            "id":             page["id"],
+            "name":           title,
+            "url":            page.get("url", ""),
+            "due_date":       due_date,
+            "status":         status_name,
+            "priority":       priority,
+            "teams":          teams,
+            "description":    description,
+            "slippage_days":  slippage_days,
+            "original_date":  original_date,
+            "all_dates":      all_dates,
+            "n_reschedules":  max(len(all_dates) - 1, 0),
+            "overdue":        overdue_val,
+            "days_overdue":   days_overdue,
+            "reviewer_names": reviewer_names,
+            "db_name":        db_name,
+            "assignees":      assignees,
+            "team_members":   team_members,
+            "_project_id":    proj_id,
+            "_parent_id":     parent_id,
+            "_blocking_ids":  blocking_ids,
         })
 
     refs = _fetch_page_refs(relation_ids, headers) if relation_ids else {}
 
     tasks: list[dict] = []
     for raw in raw_tasks:
-        pid  = raw.pop("_project_id", None)
-        prid = raw.pop("_parent_id",  None)
+        pid   = raw.pop("_project_id",   None)
+        prid  = raw.pop("_parent_id",    None)
+        bids  = raw.pop("_blocking_ids", [])
         raw["project"]     = refs.get(pid)  if pid  else None
         raw["parent_task"] = refs.get(prid) if prid else None
+        raw["blocking"]    = [refs[b] for b in bids if b in refs]
         tasks.append(raw)
 
     return tasks
