@@ -6,13 +6,16 @@ Usage:
   python mis_runner.py --events       Detect task changes  (Req 1 + Req 4)
   python mis_runner.py --daily        Due-in-2-days reminders  (Req 5)
   python mis_runner.py --slippage     Slippage digest  (Req 3)
-  python mis_runner.py --all          Run all four modes in sequence
+  python mis_runner.py --overdue      Overdue digest
+  python mis_runner.py --combined     Combined Slippage & Overdue digest (replaces --slippage + --overdue)
+  python mis_runner.py --all          Run all modes in sequence
   python mis_runner.py --dry-run      Add to any flag: log what WOULD be sent, no emails
 
 Examples:
-  python mis_runner.py --events --dry-run      # preview change detection
-  python mis_runner.py --all                   # full MIS run
-  python mis_runner.py --slippage --min-slip 3 # only tasks slipped >= 3 days
+  python mis_runner.py --events --dry-run        # preview change detection
+  python mis_runner.py --all                     # full MIS run
+  python mis_runner.py --combined --dry-run      # preview combined digest
+  python mis_runner.py --slippage --min-slip 3   # only tasks slipped >= 3 days
 
 Cron schedule (IST = UTC+5:30):
   # Every 15 min on workdays 9 AM – 7 PM — detect task changes
@@ -21,11 +24,8 @@ Cron schedule (IST = UTC+5:30):
   # Daily 8:00 AM IST — due-in-2-days reminders
   30 2 * * 1-6  /path/.venv/bin/python /path/mis_runner.py --daily
 
-  # Daily 9:00 AM IST — slippage digest
-  30 3 * * 1-6  /path/.venv/bin/python /path/mis_runner.py --slippage
-
-  # Daily 9:15 AM IST — overdue digest
-  45 3 * * 1-6  /path/.venv/bin/python /path/mis_runner.py --overdue
+  # Daily 9:00 AM IST — combined slippage+overdue digest
+  30 3 * * 1-6  /path/.venv/bin/python /path/mis_runner.py --combined
 """
 import argparse
 import json
@@ -141,10 +141,12 @@ def main() -> int:
                         help="Send due-in-2-days reminders to task owners/PMs")
     parser.add_argument("--slippage", action="store_true",
                         help="Send slippage digest to executives, leaders, PMs")
-    parser.add_argument("--overdue",  action="store_true",
+    parser.add_argument("--overdue",   action="store_true",
                         help="Send overdue digest to executives, leaders, PMs")
+    parser.add_argument("--combined", action="store_true",
+                        help="Send combined Slippage & Overdue digest (replaces --slippage + --overdue)")
     parser.add_argument("--all",      action="store_true",
-                        help="Run --events + --daily + --slippage + --overdue in sequence")
+                        help="Run --events + --daily + --combined in sequence")
     parser.add_argument("--dry-run",  action="store_true",
                         help="Log what would be sent — no emails actually sent")
     parser.add_argument("--min-slip", type=int, default=None,
@@ -153,12 +155,12 @@ def main() -> int:
                         help="Use test config (config.test.json, databases.test.json, mis_state.test.db)")
     args = parser.parse_args()
 
-    if not any([args.events, args.daily, args.slippage, args.overdue, args.all]):
+    if not any([args.events, args.daily, args.slippage, args.overdue, args.combined, args.all]):
         parser.print_help()
         return 1
 
     if args.all:
-        args.events = args.daily = args.slippage = args.overdue = True
+        args.events = args.daily = args.combined = True
 
     # ── Test-mode config selection ────────────────────────────────────────
     _base = Path(__file__).parent
@@ -190,7 +192,7 @@ def main() -> int:
 
     log.info(
         "MIS run started — modes: %s | dry_run=%s | %d DB(s)",
-        "+".join(m for m in ("events","daily","slippage","overdue") if getattr(args, m, False)),
+        "+".join(m for m in ("events","daily","slippage","overdue","combined") if getattr(args, m, False)),
         args.dry_run,
         len(db_entries),
     )
@@ -212,7 +214,10 @@ def main() -> int:
 
     from state_cache    import StateCache
     from event_detector import detect_changes, detect_due_soon, detect_slippage, detect_overdue
-    from event_dispatcher import dispatch_events, dispatch_due_soon, dispatch_slippage, dispatch_overdue
+    from event_dispatcher import (
+        dispatch_events, dispatch_due_soon,
+        dispatch_slippage, dispatch_overdue, dispatch_combined,
+    )
 
     cache      = StateCache()
     all_errors: list = []
@@ -325,7 +330,39 @@ def main() -> int:
                 errs = dispatch_overdue(overdue_tasks, stalled_ov, cfg, graph_token)
                 all_errors.extend(errs)
 
-        # ── Wrap-up ───────────────────────────────────────────────────────────
+    # ── --combined  (Slippage + Overdue in one email) ────────────────────
+    if args.combined:
+        log.info("─── MODE: --combined ─────────────────────────────────────")
+        min_overdue = cfg.get("mis", {}).get("overdue_min_days", 1)
+
+        slipped, stalled_slip = detect_slippage(notion_token, db_entries, min_days=min_slip)
+        overdue, stalled_ov   = detect_overdue(notion_token, db_entries, min_days=min_overdue)
+
+        # Merge stalled lists (deduplicated)
+        seen_stalled: set  = set()
+        all_stalled:  list = []
+        for t in stalled_slip + stalled_ov:
+            if t["id"] not in seen_stalled:
+                seen_stalled.add(t["id"])
+                all_stalled.append(t)
+
+        if not slipped and not overdue and not all_stalled:
+            log.info("No schedule exceptions found. Nothing to send.")
+        else:
+            for t in slipped:
+                log.info("  slip +%3dd  %s", t.get("slippage_days", 0), t["name"])
+            for t in overdue:
+                log.info("  ovd  +%3dd  %s", t.get("days_overdue", 0), t["name"])
+            for t in all_stalled:
+                log.info("  [%-8s]  %s", t.get("status", "?"), t["name"])
+
+            if args.dry_run:
+                log.info("DRY-RUN — no emails sent.")
+            else:
+                errs = dispatch_combined(slipped, overdue, all_stalled, cfg, graph_token)
+                all_errors.extend(errs)
+
+    # ── Wrap-up ───────────────────────────────────────────────────────────
     cache.close()
 
     stats = ""

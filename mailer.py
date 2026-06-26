@@ -1707,6 +1707,476 @@ def _build_overdue_digest_html(overdue_tasks: list, stalled_tasks: list = None) 
 
 
 # ---------------------------------------------------------------------------
+# T3+T6 Combined — Slippage & Overdue Digest
+#
+# Replaces the separate T3 (slippage) and T6 (overdue) digests.
+# On Hold tasks are excluded from the main body and shown only in a
+# dedicated bottom section. Blocked tasks remain in the main body.
+# Tasks that appear in both slipped_tasks and overdue_tasks are deduplicated.
+#
+# Parameters:
+#   slipped_tasks  — from detect_slippage() (slippage_days >= min_days)
+#   overdue_tasks  — from detect_overdue()  (days_overdue  >= min_days)
+#   stalled_tasks  — On Hold / Blocked tasks (collected by either detector)
+# ---------------------------------------------------------------------------
+
+
+def _is_on_hold(task: dict) -> bool:
+    return (task.get("status") or "").lower() == "on hold"
+
+
+def _combined_slip_trail_html(task: dict) -> str:
+    """
+    Slippage trail box for combined cards.
+    Overdue-only tasks (slippage_days == 0) get a simplified "Was due → Overdue" display.
+    """
+    import html as _html
+
+    all_dates = task.get("all_dates") or []
+    slippage_days = task.get("slippage_days", 0)
+    days_overdue = task.get("days_overdue", 0)
+    is_overdue = bool(task.get("overdue") or days_overdue > 0)
+    n_resc = max(len(all_dates) - 1, 0)
+
+    accent = "#dc2626" if is_overdue else "#f59e0b"
+    bg = "#fff1f2" if is_overdue else "#fffbeb"
+    label_color = "#991b1b" if is_overdue else "#92400e"
+    pill_border = "#fca5a5" if is_overdue else "#fcd34d"
+
+    if slippage_days == 0 and is_overdue:
+        due_date = _html.escape(str(task.get("due_date") or "?"))
+        return (
+            f'<div style="margin-top:10px;background:{bg};border-radius:6px;'
+            f'padding:10px 12px;border-left:3px solid {accent};">'
+            f'<div style="font-size:11px;font-weight:700;color:{label_color};margin-bottom:6px;">'
+            f"No reschedule &mdash; past original due date</div>"
+            f'<div style="font-size:12px;color:#374151;display:flex;align-items:center;'
+            f'flex-wrap:wrap;gap:4px;">'
+            f'<span style="background:#fff;border:1px solid #e5e7eb;border-radius:4px;'
+            f'padding:2px 8px;font-size:11px;white-space:nowrap;">Was due:&nbsp;{due_date}</span>'
+            f'<span style="color:#9ca3af;font-size:11px;padding:0 2px;">&rarr;</span>'
+            f'<span style="background:{bg};border:1px solid {accent};border-radius:4px;'
+            f'padding:2px 8px;font-size:11px;font-weight:700;color:{label_color};white-space:nowrap;">'
+            f"Overdue&nbsp;+{days_overdue}d&nbsp;&#9888;</span>"
+            f"</div></div>"
+        )
+
+    seen: set = set()
+    display_dates: list = []
+    for d in reversed(all_dates):
+        if d not in seen:
+            seen.add(d)
+            display_dates.append(d)
+
+    if not display_dates:
+        orig = task.get("original_date") or "?"
+        curr = task.get("due_date") or "?"
+        display_dates = list(dict.fromkeys([orig, curr]))
+
+    pills = []
+    for i, d in enumerate(display_dates):
+        is_last = i == len(display_dates) - 1
+        if i == 0:
+            pills.append(
+                f'<span style="background:#fff;border:1px solid #e5e7eb;border-radius:4px;'
+                f'padding:2px 8px;font-size:11px;white-space:nowrap;">'
+                f"Start:&nbsp;{_html.escape(str(d))}</span>"
+            )
+        elif is_last:
+            overdue_note = (
+                f"&nbsp;&#9888;&nbsp;Overdue&nbsp;+{days_overdue}d"
+                if is_overdue
+                else ""
+            )
+            pills.append(
+                f'<span style="background:{bg};border:1px solid {accent};border-radius:4px;'
+                f'padding:2px 8px;font-size:11px;font-weight:700;color:{label_color};white-space:nowrap;">'
+                f"Now:&nbsp;{_html.escape(str(d))}&nbsp;(+{slippage_days}d){overdue_note}</span>"
+            )
+        else:
+            pills.append(
+                f'<span style="background:#fff;border:1px solid {pill_border};border-radius:4px;'
+                f'padding:2px 8px;font-size:11px;white-space:nowrap;">'
+                f"{_html.escape(str(d))}</span>"
+            )
+
+    arrow = '<span style="color:#9ca3af;font-size:11px;padding:0 2px;">&rarr;</span>'
+    pills_html = arrow.join(pills)
+    resc_label = (
+        f"Slippage trail &mdash; {n_resc} reschedule{'s' if n_resc != 1 else ''}"
+    )
+
+    return (
+        f'<div style="margin-top:10px;background:{bg};border-radius:6px;'
+        f'padding:10px 12px;border-left:3px solid {accent};">'
+        f'<div style="font-size:11px;font-weight:700;color:{label_color};margin-bottom:6px;">'
+        f"{resc_label}</div>"
+        f'<div style="font-size:12px;color:#374151;display:flex;align-items:center;'
+        f'flex-wrap:wrap;gap:4px;">{pills_html}</div>'
+        f"</div>"
+    )
+
+
+def _combined_task_card_html(task: dict) -> str:
+    """Unified task card for both slipped and overdue-only tasks."""
+    import html as _html
+
+    slippage_days = task.get("slippage_days", 0)
+    is_overdue = bool(task.get("overdue") or task.get("days_overdue", 0) > 0)
+    days_overdue = task.get("days_overdue", 0)
+    n_resc = max(len(task.get("all_dates") or []) - 1, 0)
+    blocking = task.get("blocking") or []
+
+    accent = "#dc2626" if is_overdue else "#f59e0b"
+    card_border = "#fecaca" if is_overdue else "#e5e7eb"
+
+    main_badge = (
+        (
+            f'<span style="display:inline-block;padding:3px 10px;border-radius:10px;'
+            f'background:{accent};color:#fff;font-size:13px;font-weight:700;">+{slippage_days}d</span>'
+        )
+        if slippage_days > 0
+        else ""
+    )
+
+    extra_parts = []
+    if is_overdue:
+        extra_parts.append(
+            f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;'
+            f'background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;">'
+            f"OVERDUE +{days_overdue}d</span>"
+        )
+    if blocking:
+        extra_parts.append(
+            f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;'
+            f'background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:700;">'
+            f"Blocking {len(blocking)} task(s)</span>"
+        )
+    if n_resc > 1:
+        extra_parts.append(
+            f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;'
+            f'background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;">'
+            f"Rescheduled {n_resc}&times;</span>"
+        )
+    extra_html = (
+        (
+            '<div style="margin-top:4px;">'
+            + "".join(
+                f'<span style="margin-right:4px;">{p}</span>' for p in extra_parts
+            )
+            + "</div>"
+        )
+        if extra_parts
+        else ""
+    )
+
+    chips = []
+    if task.get("status"):
+        chips.append(_badge(task["status"], "#6b7280", small=True))
+    if task.get("priority"):
+        chips.append(
+            _badge(
+                task["priority"],
+                _PRIORITY_COLORS.get(task["priority"], "#9ca3af"),
+                small=True,
+            )
+        )
+    for team in (task.get("teams") or [])[:2]:
+        chips.append(_badge(team, "#0ea5e9", small=True))
+    chips_html = (
+        (
+            "<div style='margin-top:8px;'>"
+            + "".join(f'<span style="margin-right:4px;">{c}</span>' for c in chips)
+            + "</div>"
+        )
+        if chips
+        else ""
+    )
+
+    owner = _html.escape(task.get("owner_name") or "—")
+    reviewer = _html.escape(task.get("reviewer_names") or "—")
+    people_html = (
+        f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;font-size:12px;">'
+        f"<tr>"
+        f'<td style="width:80px;color:#9ca3af;padding:2px 0;">Owner</td>'
+        f'<td style="padding:2px 0;font-weight:600;color:#374151;">{owner}</td>'
+        f'<td style="width:80px;color:#9ca3af;padding:2px 0;">Reviewer</td>'
+        f'<td style="padding:2px 0;color:#374151;">{reviewer}</td>'
+        f"</tr></table>"
+    )
+
+    downstream_html = ""
+    if blocking:
+        rows = "".join(
+            f'<li style="margin:3px 0;">'
+            f'<a href="{b["url"]}" style="color:#6d28d9;text-decoration:none;font-weight:600;">'
+            f"{_html.escape(b['name'])}</a></li>"
+            if b.get("url")
+            else f'<li style="margin:3px 0;color:#6d28d9;font-weight:600;">'
+            f"{_html.escape(b['name'])}</li>"
+            for b in blocking
+        )
+        downstream_html = (
+            f'<div style="margin-top:10px;background:#faf5ff;border-radius:6px;'
+            f'padding:10px 14px;border-left:3px solid #8b5cf6;">'
+            f'<div style="font-size:11px;font-weight:700;color:#5b21b6;margin-bottom:6px;">'
+            f"&#9656; Affected Tasks</div>"
+            f'<ul style="margin:0;padding-left:16px;font-size:12px;color:#6d28d9;line-height:1.6;">'
+            f"{rows}</ul></div>"
+        )
+
+    return (
+        f'<table width="100%" cellpadding="0" cellspacing="0"'
+        f' style="margin-bottom:12px;border:1px solid {card_border};'
+        f'border-radius:8px;overflow:hidden;">'
+        f'<tr><td style="padding:14px 16px;border-left:4px solid {accent};">'
+        f'<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+        f'<td style="vertical-align:top;">'
+        f'<a href="{task["url"]}" style="color:#111827;font-size:14px;font-weight:700;'
+        f'text-decoration:none;">{_html.escape(task["name"])}</a>'
+        f"</td>"
+        f'<td style="vertical-align:top;text-align:right;white-space:nowrap;padding-left:12px;">'
+        f"{main_badge}{extra_html}"
+        f"</td>"
+        f"</tr></table>"
+        f"{chips_html}"
+        f"{people_html}"
+        f"{_combined_slip_trail_html(task)}"
+        f"{downstream_html}"
+        f"</td></tr></table>"
+    )
+
+
+def _stalled_section_v2_html(stalled_tasks: list) -> str:
+    """
+    On Hold / Blocked section with an extra Slippage/Overdue column.
+    Rows that have active slippage or overdue are highlighted with a cyan accent (#0891b2).
+    """
+    import html as _html
+
+    if not stalled_tasks:
+        return ""
+
+    rows = ""
+    for t in stalled_tasks:
+        status = t.get("status") or "—"
+        is_blocked = status.lower() == "blocked"
+        badge_bg = "#fee2e2" if is_blocked else "#fef3c7"
+        badge_color = "#991b1b" if is_blocked else "#92400e"
+        due = t.get("due_date") or "—"
+        owner = _html.escape(t.get("owner_name") or "—")
+        proj = (t.get("project") or {}).get("name") or "—"
+        blocking = t.get("blocking") or []
+        slip_days = t.get("slippage_days", 0)
+        overdue_days = t.get("days_overdue", 0)
+        is_overdue = bool(t.get("overdue") or overdue_days > 0)
+        has_issue = slip_days > 0 or is_overdue
+
+        row_style = "background:#f0f9ff;" if has_issue else ""
+        cell_style = "border-left:3px solid #0891b2;" if has_issue else ""
+
+        if has_issue:
+            badges = []
+            if slip_days > 0:
+                badges.append(
+                    f'<span style="display:inline-block;padding:1px 7px;border-radius:6px;'
+                    f"background:#fff0f0;border:1px solid #fca5a5;color:#b91c1c;"
+                    f'font-size:10px;font-weight:700;white-space:nowrap;">+{slip_days}d slip</span>'
+                )
+            if is_overdue:
+                badges.append(
+                    f'<span style="display:inline-block;padding:1px 7px;border-radius:6px;'
+                    f"background:#fff0f0;border:1px solid #fca5a5;color:#b91c1c;"
+                    f'font-size:10px;font-weight:700;white-space:nowrap;">OVD +{overdue_days}d</span>'
+                )
+            slip_ov_cell = (
+                '<div style="display:flex;flex-direction:column;gap:3px;">'
+                + "".join(badges)
+                + "</div>"
+            )
+        else:
+            slip_ov_cell = '<span style="color:#9ca3af;font-size:11px;">—</span>'
+
+        affected = ""
+        if blocking:
+            names = ", ".join(
+                f'<a href="{b["url"]}" style="color:#6d28d9;text-decoration:none;">'
+                f"{_html.escape(b['name'])}</a>"
+                if b.get("url")
+                else f'<span style="color:#6d28d9;">{_html.escape(b["name"])}</span>'
+                for b in blocking
+            )
+            affected = (
+                f'<div style="margin-top:4px;font-size:11px;color:#6d28d9;">'
+                f"&#9656; Blocking: {names}</div>"
+            )
+
+        rows += (
+            f'<tr style="border-bottom:1px solid #f3f4f6;{row_style}">'
+            f'<td style="padding:9px 12px;vertical-align:top;{cell_style}">'
+            f'<a href="{t["url"]}" style="color:#111827;font-size:13px;font-weight:600;'
+            f'text-decoration:none;">{_html.escape(t["name"])}</a>'
+            f"{affected}</td>"
+            f'<td style="padding:9px 12px;vertical-align:top;white-space:nowrap;">'
+            f'<span style="display:inline-block;padding:2px 8px;border-radius:8px;'
+            f'background:{badge_bg};color:{badge_color};font-size:11px;font-weight:700;">'
+            f"{_html.escape(status)}</span></td>"
+            f'<td style="padding:9px 12px;font-size:12px;color:#6b7280;vertical-align:top;">'
+            f"{_html.escape(proj)}</td>"
+            f'<td style="padding:9px 12px;font-size:12px;color:#6b7280;vertical-align:top;">'
+            f"{_html.escape(owner)}</td>"
+            f'<td style="padding:9px 12px;font-size:12px;color:#6b7280;'
+            f'vertical-align:top;white-space:nowrap;">{_html.escape(due)}</td>'
+            f'<td style="padding:9px 12px;vertical-align:top;">{slip_ov_cell}</td>'
+            f"</tr>"
+        )
+
+    has_any_issue = any(
+        t.get("slippage_days", 0) > 0
+        or t.get("overdue")
+        or t.get("days_overdue", 0) > 0
+        for t in stalled_tasks
+    )
+    note = (
+        (
+            f'<span style="margin-left:12px;font-size:11px;color:#0891b2;font-weight:500;">'
+            f"&#9432; Highlighted rows have active slippage or overdue</span>"
+        )
+        if has_any_issue
+        else ""
+    )
+
+    return (
+        f'<div style="margin:24px 0 8px;">'
+        f'<div style="font-size:13px;font-weight:700;color:#374151;'
+        f"padding:10px 14px;background:#f9fafb;border-radius:8px 8px 0 0;"
+        f'border:1px solid #e5e7eb;border-bottom:none;">'
+        f"&#9646; On Hold / Blocked Tasks"
+        f'<span style="margin-left:8px;font-size:11px;font-weight:600;'
+        f'background:#e5e7eb;color:#6b7280;padding:2px 8px;border-radius:10px;">'
+        f"{len(stalled_tasks)}</span>"
+        f"{note}</div>"
+        f'<table width="100%" cellpadding="0" cellspacing="0" '
+        f'style="border:1px solid #e5e7eb;border-radius:0 0 8px 8px;'
+        f'border-top:none;overflow:hidden;">'
+        f'<tr style="background:#f9fafb;">'
+        f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
+        f'color:#9ca3af;font-weight:600;">Task</th>'
+        f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
+        f'color:#9ca3af;font-weight:600;">Status</th>'
+        f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
+        f'color:#9ca3af;font-weight:600;">Project</th>'
+        f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
+        f'color:#9ca3af;font-weight:600;">Owner</th>'
+        f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
+        f'color:#9ca3af;font-weight:600;">Due Date</th>'
+        f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
+        f'color:#9ca3af;font-weight:600;">Slippage / Overdue</th>'
+        f"</tr>"
+        f"{rows}"
+        f"</table></div>"
+    )
+
+
+def _build_combined_digest_html(
+    slipped_tasks: list,
+    overdue_tasks: list,
+    stalled_tasks: list = None,
+) -> str:
+    """
+    Combined Slippage & Overdue digest (replaces separate T3 + T6).
+
+    - On Hold tasks are excluded from the main body; shown in the bottom section only.
+    - Blocked tasks remain in the main body (active downstream impact).
+    - Tasks in both slipped_tasks and overdue_tasks are deduplicated (slipped takes precedence).
+    - Overdue-only tasks (slippage_days == 0) use a simplified "Was due → Overdue" trail.
+    - stalled_tasks: On Hold / Blocked collected by detect_slippage() or detect_overdue().
+    """
+    import html as _html
+
+    today_str = date.today().strftime("%d %b %Y")
+    stalled = stalled_tasks or []
+
+    # Exclude On Hold from main body; Blocked stays in main
+    active_slipped = [t for t in slipped_tasks if not _is_on_hold(t)]
+    active_overdue = [t for t in overdue_tasks if not _is_on_hold(t)]
+
+    # Deduplicate: slipped tasks take the full card; pure-overdue (no slip) get simpler trail
+    slipped_ids = {t["id"] for t in active_slipped}
+    overdue_only = [t for t in active_overdue if t["id"] not in slipped_ids]
+    all_active = active_slipped + overdue_only
+
+    # Stats
+    total_slipped = len(active_slipped)
+    total_overdue = sum(
+        1 for t in all_active if t.get("overdue") or t.get("days_overdue", 0) > 0
+    )
+    max_slip = max((t.get("slippage_days", 0) for t in active_slipped), default=0)
+    downstream_cnt = sum(1 for t in all_active if t.get("blocking"))
+    proj_names = {
+        (t.get("project") or {}).get("name") or "No Project" for t in all_active
+    }
+    proj_count = len(proj_names)
+
+    header = _mis_dark_header(
+        eyebrow="Schedule Status Report",
+        eyebrow_color="#9ca3af",
+        label_text="Project Timeline Digest",
+        label_color="#dc2626",
+        title="Slippage & Overdue Report",
+        subtitle=f"{today_str}&nbsp;&nbsp;&#183;&nbsp;&nbsp;Active slippage, overdue and dependency impacts",
+    )
+
+    stat_strip = _mis_stat_strip(
+        [
+            (str(total_slipped), "Slipped Tasks", "#f59e0b"),
+            (str(total_overdue), "Overdue Tasks", "#dc2626"),
+            (f"+{max_slip}d", "Biggest Slip", "#ef4444"),
+            (str(downstream_cnt), "Downstream at Risk", "#8b5cf6"),
+            (str(proj_count), "Projects Affected", "#6b7280"),
+        ]
+    )
+
+    # Group by project
+    groups: dict = {}
+    for t in all_active:
+        proj = t.get("project") or {}
+        pk = proj.get("name") or "No Project"
+        pu = proj.get("url") or ""
+        if pk not in groups:
+            groups[pk] = {"url": pu, "tasks": []}
+        groups[pk]["tasks"].append(t)
+
+    body_html = ""
+    for proj_name, grp in groups.items():
+        proj_link = (
+            f'<a href="{grp["url"]}" style="color:#991b1b;text-decoration:none;font-weight:700;">'
+            f"{_html.escape(proj_name)}</a>"
+            if grp["url"]
+            else f'<span style="font-weight:700;">{_html.escape(proj_name)}</span>'
+        )
+        body_html += (
+            f'<div style="display:inline-block;background:#fff5f5;border-radius:4px;'
+            f"padding:4px 10px;font-size:11px;font-weight:700;color:#991b1b;"
+            f'text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">'
+            f"{proj_link}</div><br>"
+        )
+        for t in grp["tasks"]:
+            body_html += _combined_task_card_html(t)
+        body_html += '<div style="height:6px;"></div>'
+
+    body_html += _stalled_section_v2_html(stalled)
+
+    return _mis_email_shell(
+        header=header,
+        stat_strip=stat_strip,
+        body=body_html,
+        footer="Auto-generated schedule digest by MIS.",
+        max_width="900px",
+    )
+
+
+# ---------------------------------------------------------------------------
 # T4 — Project / Task Started  (detailed kickoff briefing)
 #
 # Sent to:  Project Owner  (CC: Assignee)

@@ -323,3 +323,60 @@ def dispatch_overdue(overdue_tasks: list, stalled_tasks: list, cfg: dict, token:
         return [msg]
 
     return []
+
+
+# ---------------------------------------------------------------------------
+# dispatch_combined — single combined slippage+overdue digest
+# ---------------------------------------------------------------------------
+
+def dispatch_combined(
+    slipped_tasks: list,
+    overdue_tasks: list,
+    stalled_tasks: list,
+    cfg: dict,
+    token: str,
+) -> list:
+    """
+    Send one combined Slippage & Overdue digest to executives + leaders + all PMs.
+    On Hold tasks are excluded from the main body and shown in the bottom section.
+    Returns list of error strings.
+    """
+    from mailer import _build_combined_digest_html, send_mis_email
+
+    if not slipped_tasks and not overdue_tasks and not stalled_tasks:
+        log.info("[Combined] No tasks — nothing to send.")
+        return []
+
+    recipients = _merge(
+        _executive_emails(cfg),
+        _leader_emails(cfg),
+        _all_pm_emails(cfg),
+    )
+
+    if not recipients:
+        log.warning(
+            "[Combined] No recipients in roles.executive / roles.leader / roles.pm. "
+            "Add emails to config.json and re-run."
+        )
+        return []
+
+    today_str = date.today().strftime("%d %b %Y")
+    total     = len(slipped_tasks) + len(overdue_tasks)
+    subject   = (
+        f"[Schedule Digest] {total} task(s) with schedule exceptions — {today_str}"
+    )
+    sender = cfg["sender_email"]
+
+    try:
+        html = _build_combined_digest_html(slipped_tasks, overdue_tasks, stalled_tasks)
+        send_mis_email(token, sender, recipients, subject, html)
+        log.info(
+            "[Combined] digest sent → %d recipient(s), %d slipped, %d overdue, %d stalled.",
+            len(recipients), len(slipped_tasks), len(overdue_tasks), len(stalled_tasks),
+        )
+    except Exception as exc:
+        msg = f"Combined digest: {exc}"
+        log.error("[dispatch_combined] %s", msg)
+        return [msg]
+
+    return []
