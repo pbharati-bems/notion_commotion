@@ -21,7 +21,8 @@
       "project":            "Project",
       "parent_task":        "Parent task",
       "blocking":           "Blocking",
-      "blocked_by":         "Blocked by"
+      "blocked_by":         "Blocked by",
+      "updated_at":         "Updated at"
     }
   },
   {
@@ -46,7 +47,8 @@
       "project":            "Project",
       "parent_task":        "Parent task",
       "blocking":           "Blocking",
-      "blocked_by":         "Blocked by"
+      "blocked_by":         "Blocked by",
+      "updated_at":         "Updated at"
     }
   }
 ]

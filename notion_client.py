@@ -83,6 +83,26 @@ def _user_in_blocks(blocks: list, user_id: str, user_name: str) -> bool:
     return False
 
 
+def _read_updated_at(props: dict, field: str | None) -> str | None:
+    """Read an 'Updated at'-style property, whatever its underlying type."""
+    if not field:
+        return None
+    prop = props.get(field, {})
+    ptype = prop.get("type")
+    if ptype == "last_edited_time":
+        return prop.get("last_edited_time")
+    if ptype == "date":
+        d = prop.get("date")
+        return d.get("start") if d else None
+    if ptype == "formula":
+        f = prop.get("formula", {})
+        if f.get("type") == "date":
+            d = f.get("date")
+            return d.get("start") if d else None
+        return None
+    return None
+
+
 def _fmt_last_edited(ts: str) -> str:
     if not ts:
         return ""
@@ -480,6 +500,7 @@ def get_all_tasks_for_mis(
     Returns a list of task dicts, each containing:
       id, name, url, due_date, status, priority, teams (list), description,
       slippage_days, original_date, db_name,
+      updated_at, days_since_update,
       assignees:    [{name, email}]   — owner/assignee people field
       team_members: [{name, email}]   — owner + reviewer combined, deduplicated
       project:      {name, url} | None
@@ -581,6 +602,16 @@ def get_all_tasks_for_mis(
             except ValueError:
                 pass
 
+        # Last updated — "Updated at" property, falling back to the page's
+        # own last_edited_time if the field isn't configured or is empty.
+        updated_at = _read_updated_at(props, fields.get("updated_at")) or page.get("last_edited_time")
+        days_since_update = 0
+        if updated_at:
+            try:
+                days_since_update = max(0, (date.today() - date.fromisoformat(updated_at[:10])).days)
+            except ValueError:
+                pass
+
         proj_rel     = props.get(fields.get("project",     "") or "", {}).get("relation", [])
         par_rel      = props.get(fields.get("parent_task", "") or "", {}).get("relation", [])
         blocking_rel = props.get(fields.get("blocking",    "") or "", {}).get("relation", [])
@@ -605,9 +636,11 @@ def get_all_tasks_for_mis(
             "original_date":  original_date,
             "all_dates":      all_dates,
             "n_reschedules":  max(len(all_dates) - 1, 0),
-            "overdue":        overdue_val,
-            "days_overdue":   days_overdue,
-            "reviewer_names": reviewer_names,
+            "overdue":            overdue_val,
+            "days_overdue":       days_overdue,
+            "updated_at":         updated_at,
+            "days_since_update":  days_since_update,
+            "reviewer_names":     reviewer_names,
             "db_name":        db_name,
             "assignees":      assignees,
             "team_members":   team_members,

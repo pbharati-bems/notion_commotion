@@ -1725,6 +1725,50 @@ def _is_on_hold(task: dict) -> bool:
     return (task.get("status") or "").lower() == "on hold"
 
 
+def _trim_number(n: float) -> str:
+    n = round(n, 1)
+    return str(int(n)) if n == int(n) else str(n)
+
+
+def _fmt_days(days) -> str:
+    """
+    Format a day count, collapsing to weeks past 8 days and to months past
+    4 weeks so the digest doesn't show unwieldy day/week counts.
+    """
+    days = days or 0
+    if days <= 8:
+        return f"{days}d"
+    weeks = days / 7
+    if weeks <= 4:
+        return f"{_trim_number(weeks)}w"
+    return f"{_trim_number(days / 30)}mo"
+
+
+def _updated_ago_label(days) -> str:
+    """'Updated today' / 'Updated {n} ago', using _fmt_days for the count."""
+    if not days:
+        return "Updated today"
+    return f"Updated {_fmt_days(days)} ago"
+
+
+def _combined_project_badge_html(name: str, url: str) -> str:
+    """Project name badge shown above a group of tasks in the combined digest."""
+    import html as _html
+
+    label = (
+        f'<a href="{url}" style="color:#991b1b;text-decoration:none;font-weight:700;">'
+        f"{_html.escape(name)}</a>"
+        if url
+        else f'<span style="font-weight:700;">{_html.escape(name)}</span>'
+    )
+    return (
+        f'<div style="display:inline-block;background:#fff5f5;border-radius:4px;'
+        f"padding:4px 10px;font-size:11px;font-weight:700;color:#991b1b;"
+        f'text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">'
+        f"{label}</div><br>"
+    )
+
+
 def _combined_slip_trail_html(task: dict) -> str:
     """
     Slippage trail box for combined cards.
@@ -1757,7 +1801,7 @@ def _combined_slip_trail_html(task: dict) -> str:
             f'<span style="color:#9ca3af;font-size:11px;padding:0 2px;">&rarr;</span>'
             f'<span style="background:{bg};border:1px solid {accent};border-radius:4px;'
             f'padding:2px 8px;font-size:11px;font-weight:700;color:{label_color};white-space:nowrap;">'
-            f"Overdue&nbsp;+{days_overdue}d&nbsp;&#9888;</span>"
+            f"Overdue&nbsp;+{_fmt_days(days_overdue)}&nbsp;&#9888;</span>"
             f"</div></div>"
         )
 
@@ -1784,14 +1828,14 @@ def _combined_slip_trail_html(task: dict) -> str:
             )
         elif is_last:
             overdue_note = (
-                f"&nbsp;&#9888;&nbsp;Overdue&nbsp;+{days_overdue}d"
+                f"&nbsp;&#9888;&nbsp;Overdue&nbsp;+{_fmt_days(days_overdue)}"
                 if is_overdue
                 else ""
             )
             pills.append(
                 f'<span style="background:{bg};border:1px solid {accent};border-radius:4px;'
                 f'padding:2px 8px;font-size:11px;font-weight:700;color:{label_color};white-space:nowrap;">'
-                f"Now:&nbsp;{_html.escape(str(d))}&nbsp;(+{slippage_days}d){overdue_note}</span>"
+                f"Now:&nbsp;{_html.escape(str(d))}&nbsp;(+{_fmt_days(slippage_days)}){overdue_note}</span>"
             )
         else:
             pills.append(
@@ -1833,7 +1877,7 @@ def _combined_task_card_html(task: dict) -> str:
     main_badge = (
         (
             f'<span style="display:inline-block;padding:3px 10px;border-radius:10px;'
-            f'background:{accent};color:#fff;font-size:13px;font-weight:700;">+{slippage_days}d</span>'
+            f'background:{accent};color:#fff;font-size:13px;font-weight:700;">+{_fmt_days(slippage_days)}</span>'
         )
         if slippage_days > 0
         else ""
@@ -1844,7 +1888,7 @@ def _combined_task_card_html(task: dict) -> str:
         extra_parts.append(
             f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;'
             f'background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;">'
-            f"OVERDUE +{days_overdue}d</span>"
+            f"OVERDUE +{_fmt_days(days_overdue)}</span>"
         )
     if blocking:
         extra_parts.append(
@@ -1883,6 +1927,10 @@ def _combined_task_card_html(task: dict) -> str:
         )
     for team in (task.get("teams") or [])[:2]:
         chips.append(_badge(team, "#0ea5e9", small=True))
+    if task.get("days_since_update") is not None:
+        chips.append(
+            _badge(_updated_ago_label(task["days_since_update"]), "#6366f1", small=True)
+        )
     chips_html = (
         (
             "<div style='margin-top:8px;'>"
@@ -1947,89 +1995,129 @@ def _combined_task_card_html(task: dict) -> str:
     )
 
 
+def _stalled_project_header_row(name: str, url: str) -> str:
+    """Colspan sub-header row grouping the stalled table by project."""
+    import html as _html
+
+    label = (
+        f'<a href="{url}" style="color:#991b1b;text-decoration:none;font-weight:700;">'
+        f"{_html.escape(name)}</a>"
+        if url
+        else f'<span style="font-weight:700;">{_html.escape(name)}</span>'
+    )
+    return (
+        f"<tr>"
+        f'<td colspan="6" style="padding:8px 12px;background:#fff5f5;'
+        f'border-left:4px solid #991b1b;border-bottom:1px solid #e5e7eb;">'
+        f'<span style="font-size:11px;font-weight:700;color:#991b1b;'
+        f'text-transform:uppercase;letter-spacing:.04em;">{label}</span>'
+        f"</td>"
+        f"</tr>"
+    )
+
+
 def _stalled_section_v2_html(stalled_tasks: list) -> str:
     """
     On Hold / Blocked section with an extra Slippage/Overdue column.
     Rows that have active slippage or overdue are highlighted with a cyan accent (#0891b2).
+    Grouped by project, matching the main report; the Project column is dropped
+    in favor of a project header above each group's rows.
     """
     import html as _html
 
     if not stalled_tasks:
         return ""
 
-    rows = ""
+    groups: dict = {}
     for t in stalled_tasks:
-        status = t.get("status") or "—"
-        is_blocked = status.lower() == "blocked"
-        badge_bg = "#fee2e2" if is_blocked else "#fef3c7"
-        badge_color = "#991b1b" if is_blocked else "#92400e"
-        due = t.get("due_date") or "—"
-        owner = _html.escape(t.get("owner_name") or "—")
-        proj = (t.get("project") or {}).get("name") or "—"
-        blocking = t.get("blocking") or []
-        slip_days = t.get("slippage_days", 0)
-        overdue_days = t.get("days_overdue", 0)
-        is_overdue = bool(t.get("overdue") or overdue_days > 0)
-        has_issue = slip_days > 0 or is_overdue
+        proj = t.get("project") or {}
+        pk = proj.get("name") or "No Project"
+        pu = proj.get("url") or ""
+        if pk not in groups:
+            groups[pk] = {"url": pu, "tasks": []}
+        groups[pk]["tasks"].append(t)
 
-        row_style = "background:#f0f9ff;" if has_issue else ""
-        cell_style = "border-left:3px solid #0891b2;" if has_issue else ""
+    rows = ""
+    for proj_name, grp in groups.items():
+        rows += _stalled_project_header_row(proj_name, grp["url"])
+        for t in grp["tasks"]:
+            status = t.get("status") or "—"
+            is_blocked = status.lower() == "blocked"
+            badge_bg = "#fee2e2" if is_blocked else "#fef3c7"
+            badge_color = "#991b1b" if is_blocked else "#92400e"
+            due = t.get("due_date") or "—"
+            owner = _html.escape(t.get("owner_name") or "—")
+            blocking = t.get("blocking") or []
+            slip_days = t.get("slippage_days", 0)
+            overdue_days = t.get("days_overdue", 0)
+            is_overdue = bool(t.get("overdue") or overdue_days > 0)
+            has_issue = slip_days > 0 or is_overdue
 
-        if has_issue:
-            badges = []
-            if slip_days > 0:
-                badges.append(
-                    f'<span style="display:inline-block;padding:1px 7px;border-radius:6px;'
-                    f"background:#fff0f0;border:1px solid #fca5a5;color:#b91c1c;"
-                    f'font-size:10px;font-weight:700;white-space:nowrap;">+{slip_days}d slip</span>'
+            row_style = "background:#f0f9ff;" if has_issue else ""
+            cell_style = "border-left:3px solid #0891b2;" if has_issue else ""
+
+            if has_issue:
+                badges = []
+                if slip_days > 0:
+                    badges.append(
+                        f'<span style="display:inline-block;padding:1px 7px;border-radius:6px;'
+                        f"background:#fff0f0;border:1px solid #fca5a5;color:#b91c1c;"
+                        f'font-size:10px;font-weight:700;white-space:nowrap;">+{_fmt_days(slip_days)} slip</span>'
+                    )
+                if is_overdue:
+                    badges.append(
+                        f'<span style="display:inline-block;padding:1px 7px;border-radius:6px;'
+                        f"background:#fff0f0;border:1px solid #fca5a5;color:#b91c1c;"
+                        f'font-size:10px;font-weight:700;white-space:nowrap;">OVD +{_fmt_days(overdue_days)}</span>'
+                    )
+                slip_ov_cell = (
+                    '<div style="display:flex;flex-direction:column;gap:3px;">'
+                    + "".join(badges)
+                    + "</div>"
                 )
-            if is_overdue:
-                badges.append(
-                    f'<span style="display:inline-block;padding:1px 7px;border-radius:6px;'
-                    f"background:#fff0f0;border:1px solid #fca5a5;color:#b91c1c;"
-                    f'font-size:10px;font-weight:700;white-space:nowrap;">OVD +{overdue_days}d</span>'
+            else:
+                slip_ov_cell = '<span style="color:#9ca3af;font-size:11px;">—</span>'
+
+            days_since_update = t.get("days_since_update")
+            last_updated_cell = (
+                _fmt_days(days_since_update)
+                if days_since_update is not None
+                else "—"
+            )
+
+            affected = ""
+            if blocking:
+                names = ", ".join(
+                    f'<a href="{b["url"]}" style="color:#6d28d9;text-decoration:none;">'
+                    f"{_html.escape(b['name'])}</a>"
+                    if b.get("url")
+                    else f'<span style="color:#6d28d9;">{_html.escape(b["name"])}</span>'
+                    for b in blocking
                 )
-            slip_ov_cell = (
-                '<div style="display:flex;flex-direction:column;gap:3px;">'
-                + "".join(badges)
-                + "</div>"
-            )
-        else:
-            slip_ov_cell = '<span style="color:#9ca3af;font-size:11px;">—</span>'
+                affected = (
+                    f'<div style="margin-top:4px;font-size:11px;color:#6d28d9;">'
+                    f"&#9656; Blocking: {names}</div>"
+                )
 
-        affected = ""
-        if blocking:
-            names = ", ".join(
-                f'<a href="{b["url"]}" style="color:#6d28d9;text-decoration:none;">'
-                f"{_html.escape(b['name'])}</a>"
-                if b.get("url")
-                else f'<span style="color:#6d28d9;">{_html.escape(b["name"])}</span>'
-                for b in blocking
+            rows += (
+                f'<tr style="border-bottom:1px solid #f3f4f6;{row_style}">'
+                f'<td style="padding:9px 12px;vertical-align:top;{cell_style}">'
+                f'<a href="{t["url"]}" style="color:#111827;font-size:13px;font-weight:600;'
+                f'text-decoration:none;">{_html.escape(t["name"])}</a>'
+                f"{affected}</td>"
+                f'<td style="padding:9px 12px;vertical-align:top;white-space:nowrap;">'
+                f'<span style="display:inline-block;padding:2px 8px;border-radius:8px;'
+                f'background:{badge_bg};color:{badge_color};font-size:11px;font-weight:700;">'
+                f"{_html.escape(status)}</span></td>"
+                f'<td style="padding:9px 12px;font-size:12px;color:#6b7280;vertical-align:top;">'
+                f"{_html.escape(owner)}</td>"
+                f'<td style="padding:9px 12px;font-size:12px;color:#6b7280;'
+                f'vertical-align:top;white-space:nowrap;">{_html.escape(due)}</td>'
+                f'<td style="padding:9px 12px;font-size:12px;color:#6b7280;'
+                f'vertical-align:top;white-space:nowrap;">{last_updated_cell}</td>'
+                f'<td style="padding:9px 12px;vertical-align:top;">{slip_ov_cell}</td>'
+                f"</tr>"
             )
-            affected = (
-                f'<div style="margin-top:4px;font-size:11px;color:#6d28d9;">'
-                f"&#9656; Blocking: {names}</div>"
-            )
-
-        rows += (
-            f'<tr style="border-bottom:1px solid #f3f4f6;{row_style}">'
-            f'<td style="padding:9px 12px;vertical-align:top;{cell_style}">'
-            f'<a href="{t["url"]}" style="color:#111827;font-size:13px;font-weight:600;'
-            f'text-decoration:none;">{_html.escape(t["name"])}</a>'
-            f"{affected}</td>"
-            f'<td style="padding:9px 12px;vertical-align:top;white-space:nowrap;">'
-            f'<span style="display:inline-block;padding:2px 8px;border-radius:8px;'
-            f'background:{badge_bg};color:{badge_color};font-size:11px;font-weight:700;">'
-            f"{_html.escape(status)}</span></td>"
-            f'<td style="padding:9px 12px;font-size:12px;color:#6b7280;vertical-align:top;">'
-            f"{_html.escape(proj)}</td>"
-            f'<td style="padding:9px 12px;font-size:12px;color:#6b7280;vertical-align:top;">'
-            f"{_html.escape(owner)}</td>"
-            f'<td style="padding:9px 12px;font-size:12px;color:#6b7280;'
-            f'vertical-align:top;white-space:nowrap;">{_html.escape(due)}</td>'
-            f'<td style="padding:9px 12px;vertical-align:top;">{slip_ov_cell}</td>'
-            f"</tr>"
-        )
 
     has_any_issue = any(
         t.get("slippage_days", 0) > 0
@@ -2065,11 +2153,11 @@ def _stalled_section_v2_html(stalled_tasks: list) -> str:
         f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
         f'color:#9ca3af;font-weight:600;">Status</th>'
         f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
-        f'color:#9ca3af;font-weight:600;">Project</th>'
-        f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
         f'color:#9ca3af;font-weight:600;">Owner</th>'
         f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
         f'color:#9ca3af;font-weight:600;">Due Date</th>'
+        f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
+        f'color:#9ca3af;font-weight:600;">Last Updated</th>'
         f'<th style="padding:8px 12px;text-align:left;font-size:11px;'
         f'color:#9ca3af;font-weight:600;">Slippage / Overdue</th>'
         f"</tr>"
@@ -2131,7 +2219,7 @@ def _build_combined_digest_html(
         [
             (str(total_slipped), "Slipped Tasks", "#f59e0b"),
             (str(total_overdue), "Overdue Tasks", "#dc2626"),
-            (f"+{max_slip}d", "Biggest Slip", "#ef4444"),
+            (f"+{_fmt_days(max_slip)}", "Biggest Slip", "#ef4444"),
             (str(downstream_cnt), "Downstream at Risk", "#8b5cf6"),
             (str(proj_count), "Projects Affected", "#6b7280"),
         ]
