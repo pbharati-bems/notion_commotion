@@ -1,0 +1,24 @@
+{
+  "database_id_env": "VT_NOTION_DATABASE_ID",
+  "done_value": "Complete",
+  "project_filter": {
+    "field": "Project Link",
+    "page_id": "39d1ed4a-c816-804e-9a6f-d0dced7b7646"
+  },
+  "fields": {
+    "title": "Task",
+    "task_id": "Task ID",
+    "status": "Status",
+    "priority": "Priority",
+    "task_type": "Task Type",
+    "start_date": "Planned Start",
+    "due_date": "Due Date",
+    "history": "Due Date History",
+    "effort_lead": "Efforts/Lead Time (Days)",
+    "assignee": "Assignee",
+    "blocked_by": "Blocked By",
+    "blocks": "Blocks",
+    "dependencies_met": "Dependencies Met",
+    "allowed_slippage": "Allowed Slippage (+/- Days)"
+  }
+}

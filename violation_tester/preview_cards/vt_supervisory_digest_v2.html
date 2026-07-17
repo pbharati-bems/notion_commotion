@@ -1,0 +1,433 @@
+<!-- Design preview only — modern CSS (backdrop-filter, 3D transform, box-reflect)
+     not email-client-safe. Production vt_mailer.py will need a table-based,
+     inline-style rebuild once a concept is approved. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Supervisory Digest — Preview v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    min-height: 100vh;
+    background: radial-gradient(ellipse at 50% 8%, #f8f6f0 0%, #efece2 45%, #e6e2d4 100%);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 100px 24px 170px;
+  }
+
+  .stage { position: relative; width: 100%; max-width: 860px; perspective: 2400px; }
+  .card-wrapper { position: relative; transform-style: preserve-3d; }
+
+  .reflection-blob {
+    position: absolute; left: 8%; right: 8%; bottom: -46px; height: 80px;
+    background: radial-gradient(ellipse at center, rgba(184,135,79,0.14), transparent 72%);
+    filter: blur(26px);
+    transform: rotateX(3deg) rotateY(-4deg) scaleY(0.4);
+  }
+
+  .card {
+    position: relative;
+    transform: rotateX(3deg) rotateY(-4deg);
+    background: linear-gradient(180deg, #ffffff 0%, #fbf9f3 100%);
+    border-radius: 26px;
+    border: 1px solid #e7dfcd;
+    box-shadow:
+      0 50px 90px -35px rgba(38,32,20,0.30),
+      0 18px 34px -14px rgba(38,32,20,0.16),
+      inset 0 1px 0 rgba(255,255,255,0.9);
+    padding: 52px 56px 40px;
+    -webkit-box-reflect: below 6px linear-gradient(to bottom, rgba(255,255,255,0) 55%, rgba(255,255,255,0.35) 100%);
+  }
+
+  .logo-row { display: flex; align-items: center; gap: 14px; margin-bottom: 30px; }
+  .monogram {
+    width: 42px; height: 42px; border-radius: 50%;
+    border: 1.4px solid #b8874f;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Playfair Display', serif; font-size: 16px; color: #16233a; font-weight: 600;
+  }
+  .brand-text { font-size: 10.5px; letter-spacing: 2.8px; color: #8a8371; text-transform: uppercase; }
+
+  .headline { font-family: 'Playfair Display', serif; font-weight: 600; font-size: 32px; color: #16233a; margin-bottom: 8px; }
+  .subline { font-size: 12.5px; color: #776f60; margin-bottom: 26px; }
+  .hairline { height: 1px; background: linear-gradient(90deg, #b8874f, rgba(184,135,79,0)); margin-bottom: 30px; }
+
+  .stats { display: flex; margin-bottom: 18px; }
+  .stat { flex: 1; text-align: center; padding: 0 6px; position: relative; }
+  .stat:not(:first-child)::before { content: ''; position: absolute; left: 0; top: 10%; bottom: 10%; width: 1px; background: #e7dfcd; }
+  .stat-num { font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 600; color: #16233a; }
+  .stat-label { font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase; color: #948c78; margin-top: 5px; }
+
+  .proportion-bar { display: flex; height: 6px; border-radius: 4px; overflow: hidden; margin-bottom: 38px; }
+  .proportion-bar span { height: 100%; }
+
+  .section-head { display: flex; align-items: center; gap: 8px; margin: 30px 0 14px; }
+  .section-head .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .section-head .label { font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; font-weight: 600; }
+  .section-head .count { font-size: 10.5px; color: #a49b86; }
+  .section-head::after { content: ''; flex: 1; height: 1px; background: #ece6d8; margin-left: 6px; }
+
+  .row { padding: 13px 0; border-bottom: 1px solid #f0ebe0; }
+  .row:last-child { border-bottom: none; }
+  .row-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 8px; }
+  .row-title { font-size: 14.5px; font-weight: 600; color: #16233a; }
+  .row-sub { font-size: 11px; color: #948c78; margin-top: 2px; }
+
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; padding: 4px 11px; border-radius: 20px; white-space: nowrap; }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .chip.data-error { background: #f4f1ec; color: #6b6558; } .chip.data-error .dot { background: #8a8478; }
+  .chip.violated   { background: #fbebe9; color: #8a2f22; } .chip.violated .dot   { background: #b23c28; }
+  .chip.blocked    { background: #eef0fa; color: #3b3f78; } .chip.blocked .dot    { background: #4d54a0; }
+  .chip.at-risk    { background: #fbf3e3; color: #8a5a12; } .chip.at-risk .dot    { background: #c1861f; }
+  .chip.on-track   { background: #eaf4ee; color: #1f6b4a; } .chip.on-track .dot   { background: #2f8f63; }
+
+  .row-grid { display: flex; flex-wrap: wrap; gap: 22px; }
+  .row-grid div { font-size: 12px; color: #3a3a34; }
+  .row-grid .lbl { display: block; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #a49b86; margin-bottom: 2px; }
+  .row-note { margin-top: 8px; font-size: 11.5px; color: #8a5a12; font-style: italic; }
+  .row-note.graphite { color: #776f60; }
+
+  .footer { margin-top: 36px; text-align: center; }
+  .footer .hairline { margin-bottom: 16px; }
+  .footer-mono { font-family: 'Playfair Display', serif; font-size: 12.5px; letter-spacing: 1.6px; color: #776f60; margin-bottom: 6px; }
+  .footer-caption { font-size: 10.5px; color: #a49b86; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="card-wrapper">
+    <div class="reflection-blob"></div>
+    <div class="card">
+
+      <div class="logo-row">
+        <div class="monogram">VT</div>
+        <div class="brand-text">Violation Tester &middot; Supervisory Digest</div>
+      </div>
+
+      <div class="headline">Supervisory planning report</div>
+      <div class="subline">16 Jul 2026 &nbsp;&middot;&nbsp; 19 tasks monitored &nbsp;&middot;&nbsp; Computed automatically, read-only</div>
+      <div class="hairline"></div>
+
+      <div class="stats">
+        <div class="stat"><div class="stat-num">4</div><div class="stat-label">Data error</div></div>
+        <div class="stat"><div class="stat-num">3</div><div class="stat-label">Violated</div></div>
+        <div class="stat"><div class="stat-num">4</div><div class="stat-label">Blocked</div></div>
+        <div class="stat"><div class="stat-num">1</div><div class="stat-label">At risk</div></div>
+        <div class="stat"><div class="stat-num">7</div><div class="stat-label">On track</div></div>
+      </div>
+      <div class="proportion-bar">
+        <span style="width:21%; background:#8a8478;"></span>
+        <span style="width:16%; background:#b23c28;"></span>
+        <span style="width:21%; background:#4d54a0;"></span>
+        <span style="width:5%;  background:#c1861f;"></span>
+        <span style="width:37%; background:#2f8f63;"></span>
+      </div>
+
+      <!-- Data Error -->
+      <div class="section-head"><span class="dot" style="background:#8a8478;"></span><span class="label" style="color:#6b6558;">Data error</span><span class="count">4 tasks</span></div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Functional Testing</div><div class="row-sub">Validation &middot; Critical priority</div></div>
+          <div class="chip data-error"><span class="dot"></span>Data error</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>12 Aug 2026</div>
+          <div><span class="lbl">Due</span>13 Jul 2026</div>
+          <div><span class="lbl">EES</span>12 Aug 2026</div>
+          <div><span class="lbl">Allowed</span>0d</div>
+          <div><span class="lbl">Slip</span>+36d</div>
+        </div>
+        <div class="row-note graphite">Due Date precedes Start Date — planning fields conflict and need correcting at the source.</div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">PCB Design</div><div class="row-sub">Development &middot; High priority</div></div>
+          <div class="chip data-error"><span class="dot"></span>Data error</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>18 Jul 2026</div>
+          <div><span class="lbl">Due</span>08 Jul 2026</div>
+          <div><span class="lbl">EES</span>18 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>3d</div>
+          <div><span class="lbl">Slip</span>+20d</div>
+        </div>
+        <div class="row-note graphite">Due Date precedes Start Date — planning fields conflict and need correcting at the source.</div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Loop Test Part A</div><div class="row-sub">Validation &middot; Low priority</div></div>
+          <div class="chip data-error"><span class="dot"></span>Data error</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>20 Jul 2026</div>
+          <div><span class="lbl">Due</span>28 Jul 2026</div>
+          <div><span class="lbl">EES</span>&mdash;</div>
+          <div><span class="lbl">Allowed</span>15d</div>
+          <div><span class="lbl">Slip</span>&mdash;</div>
+        </div>
+        <div class="row-note graphite">Dependency cycle — blocked by Loop Test Part B, which is blocked by this task. EES cannot be resolved.</div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Loop Test Part B</div><div class="row-sub">Validation &middot; Low priority</div></div>
+          <div class="chip data-error"><span class="dot"></span>Data error</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>20 Jul 2026</div>
+          <div><span class="lbl">Due</span>28 Jul 2026</div>
+          <div><span class="lbl">EES</span>&mdash;</div>
+          <div><span class="lbl">Allowed</span>15d</div>
+          <div><span class="lbl">Slip</span>&mdash;</div>
+        </div>
+        <div class="row-note graphite">Dependency cycle — blocked by Loop Test Part A, which is blocked by this task. EES cannot be resolved.</div>
+      </div>
+
+      <!-- Violated -->
+      <div class="section-head"><span class="dot" style="background:#b23c28;"></span><span class="label" style="color:#8a2f22;">Violated</span><span class="count">3 tasks</span></div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">User Manual Draft</div><div class="row-sub">Development &middot; High priority</div></div>
+          <div class="chip violated"><span class="dot"></span>Violated</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>16 Jul 2026</div>
+          <div><span class="lbl">Due</span>18 Jul 2026</div>
+          <div><span class="lbl">EES</span>16 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>3d</div>
+          <div><span class="lbl">Slip</span>+4d</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Material Verification</div><div class="row-sub">Development &middot; High priority</div></div>
+          <div class="chip violated"><span class="dot"></span>Violated</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>03 Jul 2026</div>
+          <div><span class="lbl">Due</span>08 Jul 2026</div>
+          <div><span class="lbl">EES</span>03 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>3d</div>
+          <div><span class="lbl">Slip</span>on schedule &middot; already past due</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">New Production Line Review</div><div class="row-sub">Validation &middot; High priority</div></div>
+          <div class="chip violated"><span class="dot"></span>Violated</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>11 Jul 2026</div>
+          <div><span class="lbl">Due</span>15 Jul 2026</div>
+          <div><span class="lbl">EES</span>11 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>3d</div>
+          <div><span class="lbl">Slip</span>on schedule &middot; already past due</div>
+        </div>
+      </div>
+
+      <!-- Blocked -->
+      <div class="section-head"><span class="dot" style="background:#4d54a0;"></span><span class="label" style="color:#3b3f78;">Blocked</span><span class="count">4 tasks</span></div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">PCB Fabrication</div><div class="row-sub">Development &middot; High priority</div></div>
+          <div class="chip blocked"><span class="dot"></span>Blocked</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>27 Jul 2026</div>
+          <div><span class="lbl">Due</span>02 Aug 2026</div>
+          <div><span class="lbl">EES</span>28 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>3d</div>
+          <div><span class="lbl">Slip</span>+1d</div>
+        </div>
+        <div class="row-note graphite">Waiting on PCB Design to complete before EES can advance.</div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Assembly</div><div class="row-sub">Development &middot; Medium priority</div></div>
+          <div class="chip blocked"><span class="dot"></span>Blocked</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>03 Aug 2026</div>
+          <div><span class="lbl">Due</span>08 Aug 2026</div>
+          <div><span class="lbl">EES</span>03 Aug 2026</div>
+          <div><span class="lbl">Allowed</span>7d</div>
+          <div><span class="lbl">Slip</span>on schedule</div>
+        </div>
+        <div class="row-note graphite">Waiting on Component Sourcing and PCB Fabrication.</div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Final Release</div><div class="row-sub">Validation &middot; Critical priority</div></div>
+          <div class="chip blocked"><span class="dot"></span>Blocked</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>22 Aug 2026</div>
+          <div><span class="lbl">Due</span>25 Aug 2026</div>
+          <div><span class="lbl">EES</span>22 Aug 2026</div>
+          <div><span class="lbl">Allowed</span>0d</div>
+          <div><span class="lbl">Slip</span>on schedule</div>
+        </div>
+        <div class="row-note graphite">Waiting on Items Approval.</div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Enclosure Mockup</div><div class="row-sub">Development &middot; Medium priority</div></div>
+          <div class="chip blocked"><span class="dot"></span>Blocked</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>20 Jul 2026</div>
+          <div><span class="lbl">Due</span>10 Aug 2026</div>
+          <div><span class="lbl">EES</span>23 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>7d</div>
+          <div><span class="lbl">Slip</span>-14d margin</div>
+        </div>
+        <div class="row-note graphite">Waiting on Enclosure Design — comfortable margin once unblocked.</div>
+      </div>
+
+      <!-- At Risk -->
+      <div class="section-head"><span class="dot" style="background:#c1861f;"></span><span class="label" style="color:#8a5a12;">At risk</span><span class="count">1 task</span></div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Solenoid Testing</div><div class="row-sub">Validation &middot; Medium priority</div></div>
+          <div class="chip at-risk"><span class="dot"></span>At risk</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>20 Jul 2026</div>
+          <div><span class="lbl">Due</span>22 Jul 2026</div>
+          <div><span class="lbl">EES</span>20 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>7d</div>
+          <div><span class="lbl">Slip</span>+2d</div>
+        </div>
+      </div>
+
+      <!-- On Track -->
+      <div class="section-head"><span class="dot" style="background:#2f8f63;"></span><span class="label" style="color:#1f6b4a;">On track</span><span class="count">7 tasks</span></div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Component Sourcing</div><div class="row-sub">Procurement &middot; High priority</div></div>
+          <div class="chip on-track"><span class="dot"></span>On track</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>14 Jul 2026</div>
+          <div><span class="lbl">Due</span>24 Jul 2026</div>
+          <div><span class="lbl">EES</span>14 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>3d</div>
+          <div><span class="lbl">Slip</span>on schedule</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Enclosure Design</div><div class="row-sub">Development &middot; Medium priority</div></div>
+          <div class="chip on-track"><span class="dot"></span>On track</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>18 Jul 2026</div>
+          <div><span class="lbl">Due</span>30 Jul 2026</div>
+          <div><span class="lbl">EES</span>18 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>7d</div>
+          <div><span class="lbl">Slip</span>-7d margin</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Firmware Development</div><div class="row-sub">Development &middot; High priority</div></div>
+          <div class="chip on-track"><span class="dot"></span>On track</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>14 Jul 2026</div>
+          <div><span class="lbl">Due</span>28 Jul 2026</div>
+          <div><span class="lbl">EES</span>14 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>3d</div>
+          <div><span class="lbl">Slip</span>on schedule</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Items Approval</div><div class="row-sub">Procurement &middot; Medium priority</div></div>
+          <div class="chip on-track"><span class="dot"></span>On track</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>01 Jul 2026</div>
+          <div><span class="lbl">Due</span>16 Jul 2026</div>
+          <div><span class="lbl">EES</span>01 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>7d</div>
+          <div><span class="lbl">Slip</span>on schedule</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Product Design</div><div class="row-sub">Development &middot; Low priority</div></div>
+          <div class="chip on-track"><span class="dot"></span>On track</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>08 Aug 2026</div>
+          <div><span class="lbl">Due</span>20 Aug 2026</div>
+          <div><span class="lbl">EES</span>08 Aug 2026</div>
+          <div><span class="lbl">Allowed</span>15d</div>
+          <div><span class="lbl">Slip</span>on schedule</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Purchase Connectors</div><div class="row-sub">Procurement &middot; Low priority</div></div>
+          <div class="chip on-track"><span class="dot"></span>On track</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>18 Jul 2026</div>
+          <div><span class="lbl">Due</span>25 Jul 2026</div>
+          <div><span class="lbl">EES</span>18 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>15d</div>
+          <div><span class="lbl">Slip</span>on schedule</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-top">
+          <div><div class="row-title">Purchase Microcontroller</div><div class="row-sub">Procurement &middot; High priority</div></div>
+          <div class="chip on-track"><span class="dot"></span>On track</div>
+        </div>
+        <div class="row-grid">
+          <div><span class="lbl">Start</span>10 Jul 2026</div>
+          <div><span class="lbl">Due</span>22 Jul 2026</div>
+          <div><span class="lbl">EES</span>10 Jul 2026</div>
+          <div><span class="lbl">Allowed</span>3d</div>
+          <div><span class="lbl">Slip</span>on schedule</div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="hairline"></div>
+        <div class="footer-mono">Supervisory Architecture</div>
+        <div class="footer-caption">Generated automatically &middot; read-only &middot; no action required</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>

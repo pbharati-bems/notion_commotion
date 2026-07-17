@@ -1,0 +1,223 @@
+<!-- Design preview only — modern CSS (backdrop-filter, 3D transform, box-reflect)
+     not email-client-safe. Production vt_mailer.py will need a table-based,
+     inline-style rebuild once this concept is approved. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Supervisory Digest — Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    min-height: 100vh;
+    background: radial-gradient(ellipse at 50% 12%, #1c1e26 0%, #0d0e11 55%, #050506 100%);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 100px 24px 160px;
+  }
+
+  .stage { position: relative; width: 100%; max-width: 900px; perspective: 2200px; }
+  .card-wrapper { position: relative; transform-style: preserve-3d; }
+
+  .reflection-blob {
+    position: absolute; left: 6%; right: 6%; bottom: -50px; height: 90px;
+    background: radial-gradient(ellipse at center, rgba(201,162,77,0.12), transparent 72%);
+    filter: blur(28px);
+    transform: rotateX(7deg) rotateY(-9deg) scaleY(0.45);
+  }
+
+  .card {
+    position: relative;
+    transform: rotateX(7deg) rotateY(-9deg);
+    background: linear-gradient(165deg, #17181d 0%, #0c0d10 55%, #08090b 100%);
+    border-radius: 28px;
+    border: 1px solid rgba(201,162,77,0.15);
+    box-shadow:
+      0 70px 100px -30px rgba(0,0,0,0.75),
+      0 25px 45px -15px rgba(0,0,0,0.55),
+      inset 0 1px 0 rgba(255,255,255,0.05);
+    padding: 56px 60px 44px;
+    -webkit-box-reflect: below 8px linear-gradient(to bottom, rgba(0,0,0,0) 40%, rgba(0,0,0,0.16) 100%);
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 520px 260px at 12% 0%, rgba(255,255,255,0.055), transparent 60%);
+    pointer-events: none;
+  }
+
+  .logo-row { display: flex; align-items: center; gap: 14px; margin-bottom: 34px; position: relative; }
+  .monogram {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 1px solid rgba(201,162,77,0.55);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Cormorant Garamond', serif; font-size: 17px; color: #d9b876; letter-spacing: 0.5px;
+  }
+  .brand-text { font-size: 11px; letter-spacing: 3px; color: #8b8578; text-transform: uppercase; }
+
+  .headline { font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 38px; color: #f2ece0; margin-bottom: 8px; position: relative; }
+  .subline { font-size: 13px; color: #8b8578; margin-bottom: 30px; position: relative; }
+  .hairline { height: 1px; background: linear-gradient(90deg, rgba(201,162,77,0.55), rgba(201,162,77,0)); margin-bottom: 32px; position: relative; }
+
+  .stats { display: flex; margin-bottom: 42px; position: relative; }
+  .stat { flex: 1; text-align: center; padding: 0 8px; position: relative; }
+  .stat:not(:first-child)::before { content: ''; position: absolute; left: 0; top: 12%; bottom: 12%; width: 1px; background: rgba(255,255,255,0.08); }
+  .stat-num { font-family: 'Cormorant Garamond', serif; font-size: 30px; font-weight: 600; color: #eadfc4; }
+  .stat-label { font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: #847e70; margin-top: 6px; }
+
+  .section-label { font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase; color: #c9a24d; margin-bottom: 20px; position: relative; }
+
+  .task-card {
+    border-radius: 22px; padding: 22px 26px; margin-bottom: 14px; position: relative;
+    background: linear-gradient(160deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015));
+    border: 1px solid rgba(255,255,255,0.08);
+    backdrop-filter: blur(14px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .task-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; }
+  .task-title { font-size: 16px; font-weight: 600; color: #f2ece0; }
+  .badge {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase;
+    padding: 5px 13px; border-radius: 20px; white-space: nowrap; border: 1px solid;
+  }
+  .badge.violated   { background: #4a1620; color: #f3d9de; border-color: #6e2530; }
+  .badge.at-risk    { background: #4a3413; color: #f3ddb0; border-color: #6e4d1c; }
+  .badge.blocked    { background: #2a2145; color: #e2d6f5; border-color: #423370; }
+  .badge.on-track   { background: #12352a; color: #cdeee0; border-color: #1f5440; }
+  .badge.data-error { background: #2b2a28; color: #e8dcc0; border-color: #4a463c; }
+
+  .task-meta { display: flex; flex-wrap: wrap; gap: 22px; }
+  .meta-item { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #a49d8c; }
+  .meta-item svg { width: 14px; height: 14px; color: #c9a24d; flex-shrink: 0; }
+  .task-note { margin-top: 12px; font-size: 12px; color: #8b8578; font-style: italic; }
+
+  .footer { margin-top: 42px; text-align: center; position: relative; }
+  .footer-mono { font-family: 'Cormorant Garamond', serif; font-size: 13px; letter-spacing: 2px; color: #a0987f; margin-bottom: 6px; }
+  .footer-caption { font-size: 10.5px; color: #6b6559; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="card-wrapper">
+    <div class="reflection-blob"></div>
+    <div class="card">
+
+      <div class="logo-row">
+        <div class="monogram">VT</div>
+        <div class="brand-text">Violation Tester &middot; Supervisory Digest</div>
+      </div>
+
+      <div class="headline">Planning status report</div>
+      <div class="subline">16 Jul 2026 &nbsp;&middot;&nbsp; 19 tasks monitored &nbsp;&middot;&nbsp; Read-only automated review</div>
+      <div class="hairline"></div>
+
+      <div class="stats">
+        <div class="stat"><div class="stat-num">7</div><div class="stat-label">On track</div></div>
+        <div class="stat"><div class="stat-num">1</div><div class="stat-label">At risk</div></div>
+        <div class="stat"><div class="stat-num">4</div><div class="stat-label">Blocked</div></div>
+        <div class="stat"><div class="stat-num">3</div><div class="stat-label">Violated</div></div>
+        <div class="stat"><div class="stat-num">4</div><div class="stat-label">Data error</div></div>
+      </div>
+
+      <div class="section-label">Requires attention</div>
+
+      <!-- Data Error — dependency cycle -->
+      <div class="task-card">
+        <div class="task-top">
+          <div class="task-title">Loop Test Part A</div>
+          <div class="badge data-error">Data error</div>
+        </div>
+        <div class="task-meta">
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2.5 4L16 12H5"/></svg>Priority &middot; Low</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>Due &middot; 28 Jul 2026</div>
+        </div>
+        <div class="task-note">Dependency cycle detected — blocked by Loop Test Part B, which is in turn blocked by this task. EES cannot be resolved until the cycle is corrected.</div>
+      </div>
+
+      <!-- Data Error — inverted dates -->
+      <div class="task-card">
+        <div class="task-top">
+          <div class="task-title">PCB Design</div>
+          <div class="badge data-error">Data error</div>
+        </div>
+        <div class="task-meta">
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2.5 4L16 12H5"/></svg>Priority &middot; High</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>Due &middot; 08 Jul 2026</div>
+        </div>
+        <div class="task-note">Due Date precedes Start Date — planning fields conflict and need correcting at the source.</div>
+      </div>
+
+      <!-- Violated -->
+      <div class="task-card">
+        <div class="task-top">
+          <div class="task-title">User Manual Draft</div>
+          <div class="badge violated">Violated</div>
+        </div>
+        <div class="task-meta">
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2.5 4L16 12H5"/></svg>Priority &middot; High</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>Due &middot; 18 Jul 2026</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>EES &middot; 16 Jul 2026</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8M21 7v6h-6"/></svg>Slip &middot; +4d (allowed 3d)</div>
+        </div>
+      </div>
+
+      <!-- At Risk -->
+      <div class="task-card">
+        <div class="task-top">
+          <div class="task-title">Solenoid Testing</div>
+          <div class="badge at-risk">At risk</div>
+        </div>
+        <div class="task-meta">
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2.5 4L16 12H5"/></svg>Priority &middot; Medium</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>Due &middot; 22 Jul 2026</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>EES &middot; 20 Jul 2026</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8M21 7v6h-6"/></svg>Slip &middot; +2d (allowed 7d)</div>
+        </div>
+      </div>
+
+      <!-- Blocked -->
+      <div class="task-card">
+        <div class="task-top">
+          <div class="task-title">PCB Fabrication</div>
+          <div class="badge blocked">Blocked</div>
+        </div>
+        <div class="task-meta">
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2.5 4L16 12H5"/></svg>Priority &middot; High</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>Due &middot; 02 Aug 2026</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>EES &middot; 28 Jul 2026</div>
+        </div>
+        <div class="task-note">Waiting on PCB Design to complete before this task's Effective Earliest Start can move forward.</div>
+      </div>
+
+      <!-- On Track -->
+      <div class="task-card">
+        <div class="task-top">
+          <div class="task-title">Component Sourcing</div>
+          <div class="badge on-track">On track</div>
+        </div>
+        <div class="task-meta">
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2.5 4L16 12H5"/></svg>Priority &middot; High</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>Due &middot; 24 Jul 2026</div>
+          <div class="meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>EES &middot; 14 Jul 2026</div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="hairline"></div>
+        <div class="footer-mono">Supervisory Architecture</div>
+        <div class="footer-caption">Generated automatically &middot; read-only &middot; no action required</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>

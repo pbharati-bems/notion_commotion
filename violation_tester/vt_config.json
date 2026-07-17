@@ -1,0 +1,10 @@
+{
+  "sender_email": "spk@bharatelectrodrives.com",
+  "recipients": [
+    "spk@bharatelectrodrives.com",
+    "pbharati@bharatelectrodrives.com"
+  ],
+  "resource_capacity": {
+    "max_concurrent_effort_tasks": 1
+  }
+}
